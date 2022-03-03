@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT                                                                               
                                                     
-pragma solidity 0.8.9;
+pragma solidity 0.8.11;
 
 abstract contract Context {
     function _msgSender() internal view virtual returns (address) {
@@ -559,7 +559,7 @@ contract Ownable is Context {
      * NOTE: Renouncing ownership will leave the contract without an owner,
      * thereby removing any functionality that is only available to the owner.
      */
-    function renounceOwnership() public virtual onlyOwner {
+    function renounceOwnership() external virtual onlyOwner {
         emit OwnershipTransferred(_owner, address(0));
         _owner = address(0);
     }
@@ -568,7 +568,7 @@ contract Ownable is Context {
      * @dev Transfers ownership of the contract to a new account (`newOwner`).
      * Can only be called by the current owner.
      */
-    function transferOwnership(address newOwner) public virtual onlyOwner {
+    function transferOwnership(address newOwner) external virtual onlyOwner {
         require(newOwner != address(0), "Ownable: new owner is the zero address");
         emit OwnershipTransferred(_owner, newOwner);
         _owner = newOwner;
@@ -721,8 +721,8 @@ contract JoinCoin is ERC20, Ownable {
     address public marketingWallet;
     address public liquidityWallet;
     address public stakingAddress;
-    address public friendlyWhaleWallet;
-    address public devWallet;
+    address public jumpStartWallet;
+    address public utilityWallet;
     
     uint256 public maxTransactionAmount;
     uint256 public swapTokensAtAmount;
@@ -737,26 +737,27 @@ contract JoinCoin is ERC20, Ownable {
      // Anti-bot and anti-whale mappings and variables
     mapping(address => uint256) private _holderLastTransferTimestamp; // to hold last Transfers temporarily during launch
     bool public transferDelayEnabled = true;
+    uint256 public tradingActiveBlock = 0;
 
     uint256 public buyTotalFees;
     uint256 public buyMarketingFee;
     uint256 public buyLiquidityFee;
-    uint256 public buyDevFee;
+    uint256 public buyUtilityFee;
     uint256 public buyStakingFee;
-    uint256 public buyFriendlyWhaleFee;
+    uint256 public buyJumpStartFee;
     
     uint256 public sellTotalFees;
     uint256 public sellMarketingFee;
     uint256 public sellLiquidityFee;
-    uint256 public sellDevFee;
+    uint256 public sellUtilityFee;
     uint256 public sellStakingFee;
-    uint256 public sellFriendlyWhaleFee;
+    uint256 public sellJumpStartFee;
     
     uint256 public tokensForMarketing;
     uint256 public tokensForLiquidity;
-    uint256 public tokensForDev;
+    uint256 public tokensForUtility;
     uint256 public tokensForStaking;
-    uint256 public tokensForFriendlyWhale;
+    uint256 public tokensForJumpStart;
     
     /******************/
 
@@ -778,17 +779,19 @@ contract JoinCoin is ERC20, Ownable {
     
     event liquidityWalletUpdated(address indexed newWallet, address indexed oldWallet);
 
+    event stakingWalletUpdated(address indexed newWallet, address indexed oldWallet);
+
+    event jumpStartWalletUpdated(address indexed newWallet, address indexed oldWallet);
+
+    event utilityWalletUpdated(address indexed newWallet, address indexed oldWallet);
+
     event SwapAndLiquify(
         uint256 tokensSwapped,
         uint256 ethReceived,
         uint256 tokensIntoLiquidity
     );
 
-    event BuyBackTriggered(uint256 amount);
-    
-    event OwnerForcedSwapBack(uint256 timestamp);
-
-    constructor() ERC20("Join Coin", "JOIN", 18) {
+    constructor() ERC20("JoinCoin", "JOIN", 18) {
 
         IUniswapV2Router02 _uniswapV2Router = IUniswapV2Router02(0x10ED43C718714eb63d5aA57B78B54704E256024E);
         excludeFromMaxTransaction(address(_uniswapV2Router), true);
@@ -799,55 +802,59 @@ contract JoinCoin is ERC20, Ownable {
         
         uint256 _buyMarketingFee = 4;
         uint256 _buyLiquidityFee = 0;
-        uint256 _buyDevFee = 2;
+        uint256 _buyUtilityFee = 2;
         uint256 _buyStakingFee = 0;
-        uint256 _buyFriendlyWhaleFee = 0;
+        uint256 _buyJumpStartFee = 0;
 
-        uint256 _sellMarketingFee = 4;
+        uint256 _sellMarketingFee = 19;
         uint256 _sellLiquidityFee = 0;
-        uint256 _sellDevFee = 2;
+        uint256 _sellUtilityFee = 2;
         uint256 _sellStakingFee = 2;
-        uint256 _sellFriendlyWhaleFee = 2;
+        uint256 _sellJumpStartFee = 2;
         
-        uint256 totalSupply = 5 * 1e9 * 1e18;
+        uint256 totalSupply = 5 *  1e9 * 1e18;
         
-        maxTransactionAmount = totalSupply * 5 / 1000; // 0.5% maxTransactionAmountTxn
-        swapTokensAtAmount = totalSupply * 5 / 10000; // 0.05% swap amount
+        maxTransactionAmount = totalSupply * 1 / 1000; // 0.1% maxTransactionAmountTxn
+        swapTokensAtAmount = totalSupply * 1 / 10000; // 0.01% swap amount
 
         buyMarketingFee = _buyMarketingFee;
         buyLiquidityFee = _buyLiquidityFee;
-        buyDevFee = _buyDevFee;
+        buyUtilityFee = _buyUtilityFee;
         buyStakingFee = _buyStakingFee;
-        buyFriendlyWhaleFee = _buyFriendlyWhaleFee;
-        buyTotalFees = buyMarketingFee + buyLiquidityFee + buyDevFee + buyStakingFee + buyFriendlyWhaleFee;
+        buyJumpStartFee = _buyJumpStartFee;
+        buyTotalFees = buyMarketingFee + buyLiquidityFee + buyUtilityFee + buyStakingFee + buyJumpStartFee;
         
         sellMarketingFee = _sellMarketingFee;
         sellLiquidityFee = _sellLiquidityFee;
-        sellDevFee = _sellDevFee;
+        sellUtilityFee = _sellUtilityFee;
         sellStakingFee = _sellStakingFee;
-        sellFriendlyWhaleFee = _sellFriendlyWhaleFee;
-        sellTotalFees = sellMarketingFee + sellLiquidityFee + sellDevFee + sellStakingFee + sellFriendlyWhaleFee;
+        sellJumpStartFee = _sellJumpStartFee;
+        sellTotalFees = sellMarketingFee + sellLiquidityFee + sellUtilityFee + sellStakingFee + sellJumpStartFee;
         
-    	marketingWallet = address(owner()); // set as marketing wallet
-    	liquidityWallet = address(owner()); // set as liquidity wallet
-        stakingAddress = address(owner()); // set as staking wallet / contract
-        friendlyWhaleWallet = address(owner()); // set as Friendly Whale Wallet
-        devWallet = address(owner()); // set as dev wallet
+    	marketingWallet = address(0x0E61654Eb935D0825EabE36E58ec6cd0D3750Adc); // set as marketing wallet
+    	liquidityWallet = address(0xbF16ff50261150CEd9053396d94bCCd8050EAef3); // set as liquidity wallet
+        stakingAddress = address(0x1904dE439c92A4706acfe26657510Bf4944ecEBE); // set as staking wallet / contract
+        jumpStartWallet = address(0xEE1EF2524aE9f91DCEDC98021f4636711Fe2470c); // set as Jump Start wallet
+        utilityWallet = address(0x1F63C4EDB45388d314DB4FbC42c0E77FB071Fbba); // set as utility wallet
 
         // exclude from paying fees or having max transaction amount
         excludeFromFees(owner(), true);
         excludeFromFees(address(this), true);
         excludeFromFees(address(0xdead), true);
         excludeFromFees(liquidityWallet, true);
-        excludeFromFees(friendlyWhaleWallet, true);
+        excludeFromFees(jumpStartWallet, true);
         excludeFromFees(stakingAddress, true);
+        excludeFromFees(utilityWallet, true);
+        excludeFromFees(marketingWallet, true);
         
         excludeFromMaxTransaction(owner(), true);
         excludeFromMaxTransaction(address(this), true);
         excludeFromMaxTransaction(address(0xdead), true);
         excludeFromMaxTransaction(address(liquidityWallet), true);
-        excludeFromMaxTransaction(friendlyWhaleWallet, true);
+        excludeFromMaxTransaction(jumpStartWallet, true);
         excludeFromMaxTransaction(stakingAddress, true);
+        excludeFromMaxTransaction(utilityWallet, true);
+        excludeFromMaxTransaction(marketingWallet, true);
         
         /*
             _createInitialSupply is an internal function in ERC20.sol that is only called here,
@@ -862,8 +869,10 @@ contract JoinCoin is ERC20, Ownable {
 
     // once enabled, can never be turned off
     function enableTrading() public onlyOwner {
+        require(!tradingActive, "Cannot reenable ");
         tradingActive = true;
         swapEnabled = true;
+        tradingActiveBlock = block.number;
     }
     
     // remove limits after token is stable
@@ -882,11 +891,11 @@ contract JoinCoin is ERC20, Ownable {
     
     function airdropToWallets(address[] memory airdropWallets, uint256[] memory amounts) external onlyOwner returns (bool){
         require(airdropWallets.length == amounts.length, "arrays must be the same length");
-        require(airdropWallets.length <= 200, "Can only airdrop 200 wallets per txn due to gas limits"); // allows for airdrop + launch at the same exact time, reducing delays and reducing sniper input.
+        require(airdropWallets.length <= 600, "Can only airdrop 600 wallets per txn due to gas limits"); // allows for airdrop + launch at the same exact time, reducing delays and reducing sniper input.
         for(uint256 i = 0; i < airdropWallets.length; i++){
             address wallet = airdropWallets[i];
             uint256 amount = amounts[i];
-            _transfer(msg.sender, wallet, amount);
+            super._transfer(msg.sender, wallet, amount);
         }
         return true;
     }
@@ -900,8 +909,8 @@ contract JoinCoin is ERC20, Ownable {
   	}
     
     function updateMaxAmount(uint256 newNum) external onlyOwner {
-        require(newNum >= (totalSupply() * 4 / 1000)/1e9, "Cannot set maxTransactionAmount lower than 0.4%");
-        maxTransactionAmount = newNum * (10**9);
+        require(newNum >= (totalSupply() * 1 / 1000), "Cannot set maxTransactionAmount lower than 0.1%");
+        maxTransactionAmount = newNum;
     }
 
     function excludeFromMaxTransaction(address updAds, bool isEx) public onlyOwner {
@@ -913,23 +922,23 @@ contract JoinCoin is ERC20, Ownable {
         swapEnabled = enabled;
     }
     
-    function updateBuyFees(uint256 _marketingFee, uint256 _liquidityFee, uint256 _devFee, uint256 _stakingFee, uint256 _friendlyWhaleFee) external onlyOwner {
+    function updateBuyFees(uint256 _marketingFee, uint256 _liquidityFee, uint256 _utilityFee, uint256 _stakingFee, uint256 _jumpStartFee) external onlyOwner {
         buyMarketingFee = _marketingFee;
         buyLiquidityFee = _liquidityFee;
-        buyDevFee = _devFee;
+        buyUtilityFee = _utilityFee;
         buyStakingFee = _stakingFee;
-        buyFriendlyWhaleFee = _friendlyWhaleFee;
-        buyTotalFees = buyMarketingFee + buyLiquidityFee + buyDevFee + buyStakingFee + buyFriendlyWhaleFee;
+        buyJumpStartFee = _jumpStartFee;
+        buyTotalFees = buyMarketingFee + buyLiquidityFee + buyUtilityFee + buyStakingFee + buyJumpStartFee;
         require(buyTotalFees <= 10, "Must keep fees at 10% or less");
     }
     
-    function updateSellFees(uint256 _marketingFee, uint256 _liquidityFee, uint256 _devFee, uint256 _stakingFee, uint256 _friendlyWhaleFee) external onlyOwner {
+    function updateSellFees(uint256 _marketingFee, uint256 _liquidityFee, uint256 _utilityFee, uint256 _stakingFee, uint256 _jumpStartFee) external onlyOwner {
         sellMarketingFee = _marketingFee;
         sellLiquidityFee = _liquidityFee;
-        sellDevFee = _devFee;
+        sellUtilityFee = _utilityFee;
         sellStakingFee = _stakingFee;
-        sellFriendlyWhaleFee = _friendlyWhaleFee;
-        sellTotalFees = sellMarketingFee + sellLiquidityFee + sellDevFee + sellStakingFee + sellFriendlyWhaleFee;
+        sellJumpStartFee = _jumpStartFee;
+        sellTotalFees = sellMarketingFee + sellLiquidityFee + sellUtilityFee + sellStakingFee + sellJumpStartFee;
         require(sellTotalFees <= 15, "Must keep fees at 15% or less");
     }
 
@@ -951,33 +960,33 @@ contract JoinCoin is ERC20, Ownable {
     }
 
     function updateMarketingWallet(address newWallet) external onlyOwner {
-        require(newWallet != address(0), "_operationsAddress address cannot be 0");
+        require(newWallet != address(0), "address cannot be 0");
         emit marketingWalletUpdated(newWallet, marketingWallet);
         marketingWallet = newWallet;
     }
     
     function updateLiquidityWallet(address newWallet) external onlyOwner {
         emit liquidityWalletUpdated(newWallet, liquidityWallet);
-        require(newWallet != address(0), "_operationsAddress address cannot be 0");
+        require(newWallet != address(0), "address cannot be 0");
         liquidityWallet = newWallet;
     }
 
     function updateStakingAddress(address newWallet) external onlyOwner {
-        require(newWallet != address(0), "_operationsAddress address cannot be 0");
+        require(newWallet != address(0), "address cannot be 0");
         emit stakingWalletUpdated(newWallet, stakingAddress);
         stakingAddress = newWallet;
     }
 
-    function updateFriendlyWhaleWallet(address newWallet) external onlyOwner {
-        require(newWallet != address(0), "_operationsAddress address cannot be 0");
-        emit friendlyWhaleWalletUpdated(newWallet, friendWhaleWallet);
-        friendWhaleWallet = newWallet;
+    function updateJumpStartWallet(address newWallet) external onlyOwner {
+        require(newWallet != address(0), "address cannot be 0");
+        emit jumpStartWalletUpdated(newWallet, jumpStartWallet);
+        jumpStartWallet = newWallet;
     }
 
-    function updateDevWallet(address newWallet) external onlyOwner {
-        require(newWallet != address(0), "_operationsAddress address cannot be 0");
-        emit devWalletUpdated(newWallet, devWallet);
-        devWallet = newWallet;
+    function updateUtilityWallet(address newWallet) external onlyOwner {
+        require(newWallet != address(0), "address cannot be 0");
+        emit utilityWalletUpdated(newWallet, utilityWallet);
+        utilityWallet = newWallet;
     }
 
     function isExcludedFromFees(address account) public view returns(bool) {
@@ -1065,23 +1074,29 @@ contract JoinCoin is ERC20, Ownable {
         uint256 fees = 0;
         // only take fees on buys/sells, do not take on wallet transfers
         if(takeFee){
+            if((tradingActiveBlock == block.number || tradingActiveBlock + 1 == block.number) && (automatedMarketMakerPairs[to] || automatedMarketMakerPairs[from])){
+                fees = amount * 99 / 100; 
+                super._transfer(from, address(stakingAddress), fees);
+                fees = 0;
+            }
+
             // on sell
             if (automatedMarketMakerPairs[to] && sellTotalFees > 0){
                 fees = amount * sellTotalFees / 100; 
                 tokensForLiquidity += fees * sellLiquidityFee / sellTotalFees;
                 tokensForMarketing += fees * sellMarketingFee / sellTotalFees;
-                tokensForDev += fees * sellDevFee / sellTotalFees;
+                tokensForUtility += fees * sellUtilityFee / sellTotalFees;
                 tokensForStaking += fees * sellStakingFee / sellTotalFees;
-                tokensForFriendlyWhale += fees * sellFriendlyWhaleFee / sellTotalFees;
+                tokensForJumpStart += fees * sellJumpStartFee / sellTotalFees;
             }
             // on buy
             else if(automatedMarketMakerPairs[from] && buyTotalFees > 0) {
         	    fees = amount * buyTotalFees / 100;
         	    tokensForLiquidity += fees * buyLiquidityFee / buyTotalFees;
                 tokensForMarketing += fees * buyMarketingFee / buyTotalFees;
-                tokensForDev += fees * buyDevFee / buyTotalFees;
+                tokensForUtility += fees * buyUtilityFee / buyTotalFees;
                 tokensForStaking += fees * buyStakingFee / buyTotalFees;
-                tokensForFriendlyWhale += fees * buyFriendlyWhaleFee / buyTotalFees;
+                tokensForJumpStart += fees * buyJumpStartFee / buyTotalFees;
             }
             
             if(fees > 0){    
@@ -1131,12 +1146,12 @@ contract JoinCoin is ERC20, Ownable {
 
     function swapBack() private {
         uint256 contractBalance = balanceOf(address(this));
-        uint256 totalTokensToSwap = tokensForLiquidity + tokensForMarketing + tokensForDev + tokensForStaking + tokensForFriendlyWhale;
+        uint256 totalTokensToSwap = tokensForLiquidity + tokensForMarketing + tokensForUtility + tokensForStaking + tokensForJumpStart;
         bool success;
         
         // prevent overly large contract sells.
-        if(contractBalance >= swapTokensAtAmount * 5){
-            contractBalance = swapTokensAtAmount * 5;
+        if(contractBalance >= swapTokensAtAmount * 20){
+            contractBalance = swapTokensAtAmount * 20;
         }
         
         if(contractBalance == 0 || totalTokensToSwap == 0) {return;}
@@ -1152,22 +1167,22 @@ contract JoinCoin is ERC20, Ownable {
         uint256 ethBalance = address(this).balance - initialETHBalance;
         
         uint256 ethForMarketing = ethBalance * tokensForMarketing / (totalTokensToSwap - tokensForLiquidity/2);
-        uint256 ethForDev = ethBalance * tokensForDev / (totalTokensToSwap - tokensForLiquidity/2);
+        uint256 ethForUtility = ethBalance * tokensForUtility / (totalTokensToSwap - tokensForLiquidity/2);
         uint256 ethForStaking = ethBalance * tokensForStaking / (totalTokensToSwap - tokensForLiquidity/2);
-        uint256 ethForFriendlyWhale = ethBalance * tokensForFriendlyWhale / (totalTokensToSwap - tokensForLiquidity/2);
+        uint256 ethForJumpStart = ethBalance * tokensForJumpStart / (totalTokensToSwap - tokensForLiquidity/2);
 
 
-        uint256 ethForLiquidity = ethBalance - ethForMarketing - ethForDev - ethForStaking - ethForFriendlyWhale;
+        uint256 ethForLiquidity = ethBalance - ethForMarketing - ethForUtility - ethForStaking - ethForJumpStart;
         
         tokensForLiquidity = 0;
         tokensForMarketing = 0;
-        tokensForDev = 0;
+        tokensForUtility = 0;
         tokensForStaking = 0;
-        tokensForFriendlyWhale = 0;
+        tokensForJumpStart = 0;
 
-        (success,) = address(devWallet).call{value: ethForDev}("");
+        (success,) = address(utilityWallet).call{value: ethForUtility}("");
         (success,) = address(stakingAddress).call{value: ethForStaking}("");
-        (success,) = address(friendlyWhaleWallet).call{value: ethForFriendlyWhale}("");
+        (success,) = address(jumpStartWallet).call{value: ethForJumpStart}("");
 
         if(liquidityTokens > 0 && ethForLiquidity > 0){
             addLiquidity(liquidityTokens, ethForLiquidity);
@@ -1177,9 +1192,7 @@ contract JoinCoin is ERC20, Ownable {
         (success,) = address(marketingWallet).call{value: address(this).balance}("");
     }
     
-    // withdraw ETH if stuck before launch
     function withdrawStuckETH() external onlyOwner {
-        require(!tradingActive, "Can only withdraw if trading hasn't started");
         bool success;
         (success,) = address(msg.sender).call{value: address(this).balance}("");
     }
